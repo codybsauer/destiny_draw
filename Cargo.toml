@@ -1,0 +1,11 @@
+[package]
+name = "destiny_draw"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+poise = "0.5.7"
+tokio = { version = "1.0", features = ["full"] }
+dotenv = "0.15"
+serde = { version = "1.0", features = ["derive"] }
+rand = "0.8"
