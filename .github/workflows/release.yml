@@ -3,7 +3,10 @@ name: Release
 on:
   push:
     tags:
-      - "v*" # Run when a tag is pushed matching v*, like v1.0.0
+      - "v*"
+
+permissions:
+  contents: write
 
 jobs:
   build-and-release:
@@ -25,23 +28,7 @@ jobs:
           command: build
           args: --release
 
-      - name: Create Release
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Release
+        uses: softprops/action-gh-release@v1
         with:
-          tag_name: ${{ github.ref }}
-          release_name: Release ${{ github.ref }}
-          draft: false
-          prerelease: false
-
-      - name: Upload Release Asset
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./target/release/destiny_draw # Replace with your binary name
-          asset_name: destiny_draw # Replace with your binary name
-          asset_content_type: application/octet-stream
+          files: ./target/release/destiny_draw # Replace with your binary name
