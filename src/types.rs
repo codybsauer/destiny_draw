@@ -1,94 +1,107 @@
-use serde::{Deserialize, Serialize};
+use serde::{Serialize, Deserialize};
+use rand::seq::SliceRandom;
+use rand::thread_rng;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub enum ElementType {
-    Air,
-    Earth,
     Fire,
     Ice,
-    None,  
+    Earth,
+    Air,
+    None,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Suit {
-    pub symbol: String,
     pub element: ElementType,
+    pub symbol: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum CardType {
-    Number(Option<u8>, Suit)
+    Number(Option<u8>, Suit),
+    Joker {
+        current_value: Option<u8>,
+        current_suit: Option<Suit>,
+        symbol: String,
+    },
 }
 
 impl CardType {
-    pub fn number_to_emoji(num: Option<u8>) -> &'static str {
-        match num {
-            Some(1) => ":one:",
-            Some(2) => ":two:",
-            Some(3) => ":three:",
-            Some(4) => ":four:",
-            Some(5) => ":five:",
-            Some(6) => ":six:",
-            Some(7) => ":seven:",
-            Some(8) => ":eight:",
-            Some(_) => ":question:",
-            None => ":question:",
+    pub fn number_to_emoji(number: u8) -> String {
+        match number {
+            1 => "1️⃣".to_string(),
+            2 => "2️⃣".to_string(),
+            3 => "3️⃣".to_string(),
+            4 => "4️⃣".to_string(),
+            5 => "5️⃣".to_string(),
+            6 => "6️⃣".to_string(),
+            7 => "7️⃣".to_string(),
+            _ => "❓".to_string(),
         }
     }
 }
 
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Deck {
     pub cards: Vec<CardType>,
 }
 
 impl Deck {
     pub fn new() -> Self {
-        let suits = vec![
-            Suit {
-                symbol: ":diamonds: = :cloud_tornado:".to_string(),
-                element: ElementType::Air,
-            },
-            Suit {
-                symbol: ":hearts: = :fire:".to_string(), 
-                element: ElementType::Fire,
-            },
-            Suit {
-                symbol: ":spades: = :snowflake:".to_string(),
-                element: ElementType::Ice,
-            },
-            Suit {
-                symbol: ":clubs: = :rock:".to_string(),
-                element: ElementType::Earth,
-            },
-        ];
-
-        let mut cards = Vec::with_capacity(30);  // 28 numbered cards + 2 jokers
-
-        for suit in &suits {
-            for number in 1..=7 {  // Changed from 8 to 7
-                cards.push(CardType::Number(Some(number), suit.clone()));
-            }
+        let mut cards = Vec::new();
+        
+        // Create suits
+        let fire_suit = Suit {
+            element: ElementType::Fire,
+            symbol: "🔥".to_string(),
+        };
+        
+        let ice_suit = Suit {
+            element: ElementType::Ice,
+            symbol: "❄️".to_string(),
+        };
+        
+        let earth_suit = Suit {
+            element: ElementType::Earth,
+            symbol: "🪨".to_string(),
+        };
+        
+        let air_suit = Suit {
+            element: ElementType::Air,
+            symbol: "💨".to_string(),
+        };
+        
+        // Add numbered cards
+        for number in 1..=7 {
+            cards.push(CardType::Number(Some(number), fire_suit.clone()));
+            cards.push(CardType::Number(Some(number), ice_suit.clone()));
+            cards.push(CardType::Number(Some(number), earth_suit.clone()));
+            cards.push(CardType::Number(Some(number), air_suit.clone()));
         }
-
-        // Add two jokers
-        for _ in 0..2 {
-            cards.push(CardType::Number(None, Suit {
-                symbol: ":black_joker:".to_string(),
-                element: ElementType::None,  
-            }));
-        }
-
+        
+        // Add jokers
+        cards.push(CardType::Joker {
+            current_value: None,
+            current_suit: None,
+            symbol: "🃏".to_string(),
+        });
+        
+        cards.push(CardType::Joker {
+            current_value: None,
+            current_suit: None,
+            symbol: "🃏".to_string(),
+        });
+        
         Deck { cards }
     }
-
+    
     pub fn shuffle(&mut self) {
-        use rand::seq::SliceRandom;
-        let mut rng = rand::thread_rng();
-        self.cards.shuffle(&mut rng);
+        self.cards.shuffle(&mut thread_rng());
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum HandType {
     TripleThreat {
         value: u8,
@@ -102,68 +115,44 @@ pub enum HandType {
     },
 }
 
-impl ElementType {
-    pub fn symbol(&self) -> &'static str {
+impl HandType {
+    pub fn to_string(&self) -> String {
         match self {
-            ElementType::Air => ":cloud_tornado:",
-            ElementType::Fire => ":fire:",
-            ElementType::Ice => ":snowflake:",
-            ElementType::Earth => ":rock:",
-            ElementType::None => "❓",
+            HandType::TripleThreat { value, suits, .. } => {
+                let elements = format_element_list(suits);
+                format!("Triple Threat: {} (Elements: {})", value, elements)
+            },
+            HandType::MatchedEdge { value, suits, .. } => {
+                let elements = format_element_list(suits);
+                format!("Matched Edge: {} (Elements: {})", value, elements)
+            }
         }
     }
 }
 
-impl HandType {
-    pub fn to_string(&self) -> String {
-        match self {
-            HandType::TripleThreat { value: _, suits, card_indices, .. } => {
-                let cards = card_indices.iter()
-                    .map(|&i| format!("[{}]", i + 1))
-                    .collect::<Vec<_>>()
-                    .join(" ");
-                let elements = suits.iter()
-                    .map(|e| e.symbol())
-                    .collect::<Vec<_>>()
-                    .join(" ");
-                format!("Triple Threat: {} - Elements: {}", cards, elements)
-            },
-            HandType::MatchedEdge { value: _, suits, card_indices, .. } => {
-                let cards = card_indices.iter()
-                    .map(|&i| format!("[{}]", i + 1))
-                    .collect::<Vec<_>>()
-                    .join(" ");
-                let elements = suits.iter()
-                    .map(|e| e.symbol())
-                    .collect::<Vec<_>>()
-                    .join(" ");
-                format!("Matched Edge: {} - Elements: {}", cards, elements)
-            }
+// Helper function to format element lists
+pub fn format_element_list(elements: &[ElementType]) -> String {
+    if elements.is_empty() {
+        return "None".to_string();
+    }
+    
+    let mut emoji_list = Vec::new();
+    for element in elements {
+        let element_emoji = match element {
+            ElementType::Fire => "🔥",
+            ElementType::Ice => "❄️",
+            ElementType::Earth => "🪨",
+            ElementType::Air => "💨",
+            ElementType::None => "",
+        };
+        if !emoji_list.contains(&element_emoji) && !element_emoji.is_empty() {
+            emoji_list.push(element_emoji);
         }
     }
-
-    pub fn effect_description(&self) -> String {
-        match self {
-            HandType::TripleThreat { value, suits, .. } => {
-                let elements = suits.iter()
-                    .map(|e| e.symbol())
-                    .collect::<Vec<_>>()
-                    .join(" ");
-                format!("Choose three targets present on the scene. For each target you may choose to:\n\
-                • Have them recover from status effects (dazed/shaken/slow/weak) and heal {} Hit Points\n\
-                • Have them suffer status effects (dazed/shaken/slow/weak) and take {} damage\n\
-                Available elements: {}", value + 15, value + 5, elements)
-            },
-            HandType::MatchedEdge { value, suits, .. } => {
-                let elements = suits.iter()
-                    .map(|e| e.symbol())
-                    .collect::<Vec<_>>()
-                    .join(" ");
-                format!("Perform a free attack with an equipped weapon. If this attack deals damage:\n\
-                • Choose one element from {}\n\
-                • All damage becomes that element type\n\
-                • Deal {} additional damage", elements, value)
-            }
-        }
+    
+    if emoji_list.is_empty() {
+        return "None".to_string();
     }
+    
+    format!("[{}]", emoji_list.join(", "))
 }

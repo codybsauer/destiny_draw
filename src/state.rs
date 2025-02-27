@@ -1,7 +1,12 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
+use std::fs;
+use std::time::Instant;
+use serde::{Serialize, Deserialize};
 use crate::types::{CardType, Deck, ElementType, HandType};
-use crate::serenity::UserId;
+use poise::serenity_prelude::UserId;
+use tokio::sync::Mutex;
 
+#[derive(Serialize, Deserialize)]
 pub struct PlayerState {
     pub deck: Deck,
     pub hand: Vec<CardType>,    
@@ -41,18 +46,15 @@ impl PlayerState {
         Ok(())
     } 
     
-
     pub fn discard_from_hand(&mut self, card_index: usize) -> Result<(), String> {
+        if card_index >= self.hand.len() {
+            return Err("Card index out of bounds".to_string());
+        }
         
-            if card_index >= self.hand.len() {
-                return Err("Card index out of bounds".to_string());
-            }
-            
-
-            let card = self.hand.remove(card_index);
-            self.discard.push(card);
-            Ok(())
-        } 
+        let card = self.hand.remove(card_index);
+        self.discard.push(card);
+        Ok(())
+    } 
     
     pub fn find_possible_hands(&self) -> Vec<HandType> {
         let mut hands = Vec::new();
@@ -90,17 +92,21 @@ impl PlayerState {
         // First pass to find value and count jokers
         for card in &cards {
             match card {
-                CardType::Number(Some(v), suit) => {
-                    if value.is_none() {
-                        value = Some(*v);
-                    } else if value != Some(*v) {
-                        return None;
+                CardType::Number(v, suit) => {
+                    if let Some(num) = v {
+                        if value.is_none() {
+                            value = Some(*num);
+                        } else if value != Some(*num) {
+                            return None;
+                        }
+                        if suit.element != ElementType::None {
+                            non_joker_suits.push(suit.element.clone());
+                        }
+                    } else {
+                        joker_count += 1;
                     }
-                    if suit.element != ElementType::None {
-                        non_joker_suits.push(suit.element.clone());
-                    }
-                }
-                CardType::Number(None, _) => {
+                },
+                CardType::Joker { .. } => {
                     joker_count += 1;
                 }
             }
@@ -133,17 +139,21 @@ impl PlayerState {
         // First pass to find value and count jokers
         for card in &cards {
             match card {
-                CardType::Number(Some(v), suit) => {
-                    if value.is_none() {
-                        value = Some(*v);
-                    } else if value != Some(*v) {
-                        return None;
+                CardType::Number(v, suit) => {
+                    if let Some(num) = v {
+                        if value.is_none() {
+                            value = Some(*num);
+                        } else if value != Some(*num) {
+                            return None;
+                        }
+                        if suit.element != ElementType::None {
+                            non_joker_suits.push(suit.element.clone());
+                        }
+                    } else {
+                        joker_count += 1;
                     }
-                    if suit.element != ElementType::None {
-                        non_joker_suits.push(suit.element.clone());
-                    }
-                }
-                CardType::Number(None, _) => {
+                },
+                CardType::Joker { .. } => {
                     joker_count += 1;
                 }
             }
@@ -168,14 +178,21 @@ impl PlayerState {
     }
 }
 
+#[derive(Serialize, Deserialize, Default)]
 pub struct PlayerStateManager {
-    pub players: HashMap<UserId, PlayerState>
+    pub players: HashMap<UserId, PlayerState>,
+    #[serde(skip)]
+    dirty: bool,
+    #[serde(skip)]
+    last_save: Option<Instant>,
 }
 
 impl PlayerStateManager {
     pub fn new() -> Self {
         PlayerStateManager {
-            players: HashMap::new()
+            players: HashMap::new(),
+            dirty: false,
+            last_save: Some(Instant::now()),
         }
     }
 
@@ -185,6 +202,49 @@ impl PlayerStateManager {
 
     pub fn start_new_combat(&mut self, user_id: UserId) -> &mut PlayerState {
         self.players.insert(user_id, PlayerState::new());
+        self.mark_dirty();
         self.players.get_mut(&user_id).unwrap()
+    }
+    
+    // Save state to file
+    pub fn save_state(&mut self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        if !self.dirty {
+            return Ok(());
+        }
+        
+        let json = serde_json::to_string(&self)?;
+        // Create a temp file first to avoid corruption if the process crashes
+        fs::write("player_state.json.tmp", &json)?;
+        fs::rename("player_state.json.tmp", "player_state.json")?;
+        
+        self.dirty = false;
+        self.last_save = Some(Instant::now());
+        Ok(())
+    }
+
+    pub async fn save_if_needed(arc_self: &Arc<Mutex<Self>>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let mut self_guard = arc_self.lock().await;
+    if self_guard.dirty {
+        self_guard.save_state()?;
+    }
+    Ok(())
+}
+    
+    // Load state from file
+    pub fn load_state() -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        match fs::read_to_string("player_state.json") {
+            Ok(json) => {
+                let mut state: PlayerStateManager = serde_json::from_str(&json)?;
+                state.dirty = false;
+                state.last_save = Some(Instant::now());
+                Ok(state)
+            },
+            Err(_) => Ok(Self::new()) // Create new if file doesn't exist
+        }
+    }
+    
+    // Mark state as modified
+    fn mark_dirty(&mut self) {
+        self.dirty = true;
     }
 }

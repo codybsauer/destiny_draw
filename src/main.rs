@@ -3,7 +3,7 @@ mod state;
 
 use poise::serenity_prelude as serenity;
 use dotenv::dotenv;
-use types::HandType;
+use types::{format_element_list, HandType};
 use crate::state::PlayerStateManager;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -25,9 +25,22 @@ fn format_hand_display(hand: &[CardType]) -> String {
             CardType::Number(num, suit) => {
                 format!("{}. {} {}\n", 
                     i + 1,
-                    CardType::number_to_emoji(*num),
+                    CardType::number_to_emoji(num.unwrap_or(0)),
                     suit.symbol
                 )
+            },
+            CardType::Joker { current_value, current_suit, symbol } => {
+                match (current_value, current_suit) {
+                    (Some(val), Some(suit)) => format!("{}. {} {}\n",
+                        i + 1,
+                        CardType::number_to_emoji(*val),
+                        suit.symbol
+                    ),
+                    _ => format!("{}. :question: {}\n",
+                        i + 1,
+                        symbol
+                    )
+                }
             }
         };
         display.push_str(&card_display);
@@ -134,7 +147,23 @@ pub async fn view_possible_resolutions(
 
     let mut response = String::from("Available hands:\n");
     for (i, hand) in possible_hands.iter().enumerate() {
-        response.push_str(&format!("{}. {}\n", i + 1, hand.to_string()));
+        // Get the card indices (positions) for this hand
+        let card_positions = match hand {
+            HandType::TripleThreat { card_indices, .. } => card_indices,
+            HandType::MatchedEdge { card_indices, .. } => card_indices,
+        };
+        
+        // Convert to 1-based indexing for display and sort for readability
+        let mut display_positions: Vec<usize> = card_positions.iter().map(|&idx| idx + 1).collect();
+        display_positions.sort();
+        
+        // Format the positions as a string like "Cards: 1, 3, 5"
+        let positions_str = format!("Cards: {}", display_positions.iter()
+            .map(|pos| pos.to_string())
+            .collect::<Vec<_>>()
+            .join(", "));
+        
+        response.push_str(&format!("{}. {} ({})\n", i + 1, hand.to_string(), positions_str));
     }
     
     ctx.say(response).await?;
@@ -161,6 +190,16 @@ pub async fn resolve_hand(
     }
 
     let hand = &possible_hands[hand_number - 1];
+    
+    // Get the available elements for this hand
+    let available_elements = match hand {
+        HandType::TripleThreat { suits, .. } => suits,
+        HandType::MatchedEdge { suits, .. } => suits,
+    };
+    
+    // Format elements as a string with square brackets
+    let elements_str = format_element_list(available_elements);
+    
     // Discard the used cards
     match hand {
         HandType::TripleThreat { card_indices, .. } |
@@ -176,12 +215,27 @@ pub async fn resolve_hand(
         }
     }
 
-    let hand = player.hand.clone();
+    let hand_clone = player.hand.clone();
     drop(player_state_manager);
     
+    // Format the effect message with bracketed elements
+    let effect_message = match hand {
+        HandType::TripleThreat { value, .. } => {
+            format!("Triple Threat resolved! Each of the three targets recovers or suffers from dazed, shaken, slow or weak and heals Hit Points equal to {}, or takes {} {} damage", 
+                value + 15, 
+                value + 5, 
+                elements_str)
+        },
+        HandType::MatchedEdge { value, .. } => {
+            format!("Matched Edge resolved! Your weapon strike deals {} bonus {} damage", 
+                value, 
+                elements_str)
+        }
+    };
+    
     let message = format!("{}\n{}", 
-        possible_hands[hand_number - 1].effect_description(),
-        format_hand_display(&hand));
+        effect_message,
+        format_hand_display(&hand_clone));
     ctx.say(message).await?;
     Ok(())
 }
@@ -199,7 +253,25 @@ static COMMANDS: &[fn() -> poise::Command<Data, Error>] = &[
 #[tokio::main]
 async fn main() -> Result<(), Error> {
     dotenv().ok();
-    let player_state_manager = Arc::new(Mutex::new(PlayerStateManager::new()));
+    
+    // Try to load saved state, or create a new one if loading fails
+    let player_state_manager = Arc::new(Mutex::new(
+        PlayerStateManager::load_state().unwrap_or_else(|e| {
+            eprintln!("Error loading state: {}, starting fresh", e);
+            PlayerStateManager::new()
+        })
+    ));
+    
+    let state_manager_clone = player_state_manager.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
+        loop {
+            interval.tick().await;
+            if let Err(e) = PlayerStateManager::save_if_needed(&state_manager_clone).await {
+                eprintln!("Failed to save state: {}", e);
+            }
+        }
+    });
     
     let framework = poise::Framework::builder()
         .options(poise::FrameworkOptions {
@@ -210,9 +282,7 @@ async fn main() -> Result<(), Error> {
         .intents(serenity::GatewayIntents::non_privileged())
         .setup(move |ctx, _ready, framework| {
             Box::pin(async move {
-                println!("Registering commands...");
                 poise::builtins::register_globally(ctx, &framework.options().commands).await?;
-                println!("Commands registered successfully!");
                 Ok(Data {
                     player_state_manager: player_state_manager.clone(),
                 })

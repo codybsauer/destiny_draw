@@ -290,6 +290,7 @@ dependencies = [
  "poise",
  "rand",
  "serde",
+ "serde_json",
  "tokio",
 ]
 
