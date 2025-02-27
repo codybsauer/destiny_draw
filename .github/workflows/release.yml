@@ -30,13 +30,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu
 
-      - name: Build release binary for ARM64
+      - name: Build release binary for ARM64 with static linking
         uses: actions-rs/cargo@v1
         with:
           command: build
           args: --release --target aarch64-unknown-linux-gnu
         env:
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+          RUSTFLAGS: "-C target-feature=+crt-static"
 
       - name: Release
         uses: softprops/action-gh-release@v1
