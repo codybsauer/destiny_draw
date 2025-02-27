@@ -221,13 +221,13 @@ pub async fn resolve_hand(
     // Format the effect message with bracketed elements
     let effect_message = match hand {
         HandType::TripleThreat { value, .. } => {
-            format!("Triple Threat resolved! Each of the three targets recovers or suffers from dazed, shaken, slow or weak and heals Hit Points equal to {}, or takes {} {} damage", 
+            format!("Triple Threat resolved! Three targets of your choice recover or suffer from **dazed, shaken, slow or weak**. If the target recovers then it also heals Hit Points equal to {}. If the target suffers it also takes {} {} damage.", 
                 value + 15, 
                 value + 5, 
                 elements_str)
         },
         HandType::MatchedEdge { value, .. } => {
-            format!("Matched Edge resolved! Your weapon strike deals {} bonus {} damage", 
+            format!("Matched Edge resolved! Your weapon strike deals {} bonus {} damage!", 
                 value, 
                 elements_str)
         }
@@ -264,7 +264,7 @@ async fn main() -> Result<(), Error> {
     
     let state_manager_clone = player_state_manager.clone();
     tokio::spawn(async move {
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
         loop {
             interval.tick().await;
             if let Err(e) = PlayerStateManager::save_if_needed(&state_manager_clone).await {
