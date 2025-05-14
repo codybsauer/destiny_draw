@@ -151,6 +151,16 @@ pub async fn view_possible_resolutions(
         let card_positions = match hand {
             HandType::TripleThreat { card_indices, .. } => card_indices,
             HandType::MatchedEdge { card_indices, .. } => card_indices,
+            HandType::Jackpot { card_indices, .. } => card_indices,
+            HandType::DoubleTrouble { card_indices, .. } => card_indices,
+        };
+        
+        // Get MP cost based on hand type
+        let mp_cost = match hand {
+            HandType::TripleThreat { .. } => 10,
+            HandType::MatchedEdge { .. } => 5,
+            HandType::Jackpot { .. } => 20,
+            HandType::DoubleTrouble { .. } => 20,
         };
         
         // Convert to 1-based indexing for display and sort for readability
@@ -163,12 +173,13 @@ pub async fn view_possible_resolutions(
             .collect::<Vec<_>>()
             .join(", "));
         
-        response.push_str(&format!("{}. {} ({})\n", i + 1, hand.to_string(), positions_str));
+        response.push_str(&format!("{}. {} (MP Cost: {}, {})\n", i + 1, hand.to_string(), mp_cost, positions_str));
     }
     
     ctx.say(response).await?;
     Ok(())
 }
+
 
 #[poise::command(slash_command)]
 pub async fn resolve_hand(
@@ -195,6 +206,8 @@ pub async fn resolve_hand(
     let available_elements = match hand {
         HandType::TripleThreat { suits, .. } => suits,
         HandType::MatchedEdge { suits, .. } => suits,
+        HandType::Jackpot { suits, .. } => suits,
+        HandType::DoubleTrouble { suits, .. } => suits,
     };
     
     // Format elements as a string with square brackets
@@ -203,7 +216,9 @@ pub async fn resolve_hand(
     // Discard the used cards
     match hand {
         HandType::TripleThreat { card_indices, .. } |
-        HandType::MatchedEdge { card_indices, .. } => {
+        HandType::MatchedEdge { card_indices, .. } |
+        HandType::Jackpot { card_indices, .. } |
+        HandType::DoubleTrouble { card_indices, .. } => {
             for &index in card_indices.iter().rev() {
                 player.discard_from_hand(index)?;
             }
@@ -229,6 +244,16 @@ pub async fn resolve_hand(
         HandType::MatchedEdge { value, .. } => {
             format!("Matched Edge resolved! Your weapon strike deals {} bonus {} damage!", 
                 value, 
+                elements_str)
+        },
+        HandType::Jackpot { value, .. } => {
+            format!("Jackpot resolved! You and every ally present on the scene recover 777 Hit Points, 777 Mind Points, and recover from all status effects; any PCs who have surrendered but are still part of the scene immediately regain consciousness (this does not cancel the effects of their Surrender).")
+        },
+        HandType::DoubleTrouble { first_pair_value, second_pair_value, .. } => {
+            format!("Double Trouble resolved! You deal damage equal to {} (15 + {} + {}) to each of up to two different enemies you can see that are present on the scene; the type of this damage is one of your choice among those matching the suits of the resolved cards: {}",
+                15 + first_pair_value + second_pair_value,
+                first_pair_value,
+                second_pair_value,
                 elements_str)
         }
     };

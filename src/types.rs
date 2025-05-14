@@ -113,6 +113,17 @@ pub enum HandType {
         suits: Vec<ElementType>,
         card_indices: Vec<usize>,
     },
+    Jackpot {
+        value: u8,
+        suits: Vec<ElementType>,
+        card_indices: Vec<usize>,
+    },
+    DoubleTrouble {
+        first_pair_value: u8,
+        second_pair_value: u8,
+        suits: Vec<ElementType>,
+        card_indices: Vec<usize>,
+    },
 }
 
 impl HandType {
@@ -125,6 +136,14 @@ impl HandType {
             HandType::MatchedEdge { value, suits, .. } => {
                 let elements = format_element_list(suits);
                 format!("Matched Edge: {} (Elements: {})", value, elements)
+            },
+            HandType::Jackpot { value, suits, .. } => {
+                let elements = format_element_list(suits);
+                format!("Jackpot: {} (Elements: {})", value, elements)
+            },
+            HandType::DoubleTrouble { first_pair_value, second_pair_value, suits, .. } => {
+                let elements = format_element_list(suits);
+                format!("Double Trouble: {} and {} (Elements: {})", first_pair_value, second_pair_value, elements)
             }
         }
     }

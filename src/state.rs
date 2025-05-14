@@ -60,6 +60,49 @@ impl PlayerState {
         let mut hands = Vec::new();
         let hand_len = self.hand.len();
         
+        // Check for jackpot (4 of a kind)
+        if hand_len >= 4 {
+            for i in 0..hand_len {
+                for j in (i + 1)..hand_len {
+                    for k in (j + 1)..hand_len {
+                        for l in (k + 1)..hand_len {
+                            if let Some(hand_type) = self.check_jackpot(i, j, k, l) {
+                                hands.push(hand_type);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Check for double trouble (2 pairs)
+        if hand_len >= 4 {
+            for i in 0..hand_len {
+                for j in (i + 1)..hand_len {
+                    if let Some((value1, _)) = self.check_pair_value(i, j) {
+                        for k in 0..hand_len {
+                            if k == i || k == j {
+                                continue;
+                            }
+                            for l in (k + 1)..hand_len {
+                                if l == i || l == j {
+                                    continue;
+                                }
+                                if let Some((value2, _)) = self.check_pair_value(k, l) {
+                                    if value1 != value2 {
+                                        // Only add if the values are different
+                                        if let Some(hand_type) = self.check_double_trouble(i, j, k, l) {
+                                            hands.push(hand_type);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
         // Check for triples
         for i in 0..hand_len {
             for j in (i + 1)..hand_len {
@@ -81,6 +124,124 @@ impl PlayerState {
         }
         
         hands
+    }
+
+    // Helper function to check if two cards form a pair and return their value
+    fn check_pair_value(&self, i: usize, j: usize) -> Option<(u8, Vec<ElementType>)> {
+        let cards = [&self.hand[i], &self.hand[j]];
+        let mut value = None;
+        let mut joker_count = 0;
+        let mut non_joker_suits = Vec::new();
+
+        // First pass to find value and count jokers
+        for card in &cards {
+            match card {
+                CardType::Number(v, suit) => {
+                    if let Some(num) = v {
+                        if value.is_none() {
+                            value = Some(*num);
+                        } else if value != Some(*num) {
+                            return None;
+                        }
+                        if suit.element != ElementType::None {
+                            non_joker_suits.push(suit.element.clone());
+                        }
+                    } else {
+                        joker_count += 1;
+                    }
+                },
+                CardType::Joker { .. } => {
+                    joker_count += 1;
+                }
+            }
+        }
+
+        // Use 7 as default if no value was found (all jokers)
+        let value = value.unwrap_or(7);
+        
+        if joker_count + non_joker_suits.len() == 2 {
+            Some((value, if joker_count > 0 {
+                vec![ElementType::Air, ElementType::Earth, ElementType::Fire, ElementType::Ice]
+            } else {
+                non_joker_suits
+            }))
+        } else {
+            None
+        }
+    }
+
+    fn check_jackpot(&self, i: usize, j: usize, k: usize, l: usize) -> Option<HandType> {
+        let cards = [&self.hand[i], &self.hand[j], &self.hand[k], &self.hand[l]];
+        let mut value = None;
+        let mut joker_count = 0;
+        let mut non_joker_suits = Vec::new();
+
+        // Jackpot requires 4 of a kind with no jokers
+        for card in &cards {
+            match card {
+                CardType::Number(v, suit) => {
+                    if let Some(num) = v {
+                        if value.is_none() {
+                            value = Some(*num);
+                        } else if value != Some(*num) {
+                            return None;
+                        }
+                        if suit.element != ElementType::None {
+                            non_joker_suits.push(suit.element.clone());
+                        }
+                    } else {
+                        return None; // No wildcard number in Jackpot
+                    }
+                },
+                CardType::Joker { .. } => {
+                    return None; // No jokers in Jackpot
+                }
+            }
+        }
+
+        if non_joker_suits.len() == 4 {
+            Some(HandType::Jackpot {
+                value: value.unwrap_or(7),
+                suits: non_joker_suits,
+                card_indices: vec![i, j, k, l],
+            })
+        } else {
+            None
+        }
+    }
+
+    fn check_double_trouble(&self, i: usize, j: usize, k: usize, l: usize) -> Option<HandType> {
+        // First pair
+        let first_pair = self.check_pair_value(i, j)?;
+        // Second pair
+        let second_pair = self.check_pair_value(k, l)?;
+        
+        // Get suits from both pairs
+        let mut all_suits = Vec::new();
+        let mut added_elements = Vec::new();
+        
+        // Process first pair suits
+        for element in &first_pair.1 {
+            if !added_elements.contains(element) {
+                all_suits.push(element.clone());
+                added_elements.push(element.clone());
+            }
+        }
+        
+        // Process second pair suits
+        for element in &second_pair.1 {
+            if !added_elements.contains(element) {
+                all_suits.push(element.clone());
+                added_elements.push(element.clone());
+            }
+        }
+        
+        Some(HandType::DoubleTrouble {
+            first_pair_value: first_pair.0,
+            second_pair_value: second_pair.0,
+            suits: all_suits,
+            card_indices: vec![i, j, k, l],
+        })
     }
 
     fn check_triple(&self, i: usize, j: usize, k: usize) -> Option<HandType> {
