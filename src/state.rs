@@ -60,6 +60,9 @@ impl PlayerState {
         let mut hands = Vec::new();
         let hand_len = self.hand.len();
         
+        // Track pairs we've already seen to avoid duplicates
+        let mut seen_double_troubles = Vec::new();
+        
         // Check for jackpot (4 of a kind)
         if hand_len >= 4 {
             for i in 0..hand_len {
@@ -90,9 +93,17 @@ impl PlayerState {
                                 }
                                 if let Some((value2, _)) = self.check_pair_value(k, l) {
                                     if value1 != value2 {
-                                        // Only add if the values are different
-                                        if let Some(hand_type) = self.check_double_trouble(i, j, k, l) {
-                                            hands.push(hand_type);
+                                        // Create a pair of values, sorted to avoid duplicates
+                                        let mut pair_values = [value1, value2];
+                                        pair_values.sort();
+                                        
+                                        // Check if we've already seen this combination
+                                        if !seen_double_troubles.contains(&pair_values) {
+                                            seen_double_troubles.push(pair_values);
+                                            
+                                            if let Some(hand_type) = self.check_double_trouble(i, j, k, l) {
+                                                hands.push(hand_type);
+                                            }
                                         }
                                     }
                                 }
